@@ -14,7 +14,7 @@
 <script>
 const q = new URLSearchParams(location.search);
 // Белый с прозрачностью (alpha=1 — чисто белый), лицо по умолчанию уменьшенное
-const ALPHA = q.has('alpha') ? +q.get('alpha') : 0.6;
+const ALPHA = q.has('alpha') ? +q.get('alpha') : 0.2;
 const SMALL = q.get('size') !== 'big';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
