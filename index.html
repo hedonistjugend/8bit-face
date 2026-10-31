@@ -6,22 +6,23 @@
 <title>8-bit Face</title>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden}
-  canvas{display:block}
+  canvas{display:block;touch-action:none}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
 const q = new URLSearchParams(location.search);
-const FG = '#' + (q.get('fg') || 'ffffff').replace(/[^0-9a-fA-F]/g, '');
-const SMALL = q.get('size') === 'small';
+// Белый с прозрачностью (alpha=1 — чисто белый), лицо по умолчанию уменьшенное
+const ALPHA = q.has('alpha') ? +q.get('alpha') : 0.6;
+const SMALL = q.get('size') !== 'big';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 let cell, cx, cy;
 function resize(){
   const d = devicePixelRatio || 1;
   cv.width = innerWidth * d; cv.height = innerHeight * d;
-  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  cv.style.opacity = ALPHA; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
   cell = Math.max(4, Math.floor(Math.min(cv.width / 17, cv.height / 22)));
   cx = Math.floor(cv.width / 2); cy = Math.floor(cv.height / 2);
 }
@@ -83,8 +84,8 @@ function pickTarget(){
 
 function step(){
   t++;
-  if (hold-- <= 0) pickTarget();
-  const speed = surprise > 0 ? 0.18 : 0.06;
+  if (!following && hold-- <= 0) pickTarget();
+  const speed = surprise > 0 || following ? 0.18 : 0.06;
   yaw += (ty - yaw) * speed;
   pitch += (tp - pitch) * speed;
   if (surprise > 0) surprise--;
@@ -93,8 +94,8 @@ function step(){
 }
 
 function draw(){
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle = FG;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#fff';
   for (const p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
     const k = p.depth || 0;
     if (p.ring){ // "О": рамка толщиной в 1 пиксель
@@ -128,17 +129,34 @@ function loop(ts){
   draw();
   requestAnimationFrame(loop);
 }
-// Клик: лицо поворачивается в сторону клика и удивляется
-cv.addEventListener('pointerdown', e => {
+// Взгляд в точку экрана
+let following = false;
+function lookAt(clientX, clientY){
   const d = devicePixelRatio || 1;
-  const dx = (e.clientX * d - cx) / (cv.width / 2);
-  const dy = (e.clientY * d - cy) / (cv.height / 2);
   const lim = v => Math.max(-1, Math.min(1, v));
-  ty = lim(dx * 1.4) * 0.38;
-  tp = lim(dy * 1.4) * 0.25;
-  surprise = 80; blink = 0;
-  hold = 140;
+  ty = lim((clientX * d - cx) / (cv.width / 2) * 1.4) * 0.38;
+  tp = lim((clientY * d - cy) / (cv.height / 2) * 1.4) * 0.25;
+}
+// Палец или мышь: лицо следит за ними; короткий тап — удивление
+let down = null;
+cv.addEventListener('pointerdown', e => {
+  down = { x: e.clientX, y: e.clientY, t: performance.now() };
+  following = true; lookAt(e.clientX, e.clientY); hold = 9999;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 });
+cv.addEventListener('pointermove', e => {
+  if (e.pointerType === 'mouse' || down){ following = true; lookAt(e.clientX, e.clientY); hold = 9999; }
+});
+function release(e){
+  if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 350){
+    surprise = 80; blink = 0;
+  }
+  down = null;
+  if (e.pointerType !== 'mouse'){ following = false; hold = 100; }
+}
+cv.addEventListener('pointerup', release);
+cv.addEventListener('pointercancel', release);
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse'){ following = false; hold = 100; } });
 
 let frozen = false;
 if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); }
