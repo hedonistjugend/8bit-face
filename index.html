@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>8-bit Face</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let cell, cx, cy;
+function resize(){
+  const d = devicePixelRatio || 1;
+  cv.width = innerWidth * d; cv.height = innerHeight * d;
+  cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  cell = Math.max(4, Math.floor(Math.min(cv.width / 17, cv.height / 22)));
+  cx = Math.floor(cv.width / 2); cy = Math.floor(cv.height / 2);
+}
+addEventListener('resize', resize); resize();
+
+// Лицо из прямоугольников в клетках (границы клеток). depth — насколько деталь "выступает" (нос сильнее)
+const parts = [
+  { x0:-6, x1:-5, y0:0, y1:2, eye:true },          // левый глаз
+  { x0: 5, x1: 6, y0:0, y1:2, eye:true },          // правый глаз
+  { x0: 0, x1: 1, y0:0, y1:6, depth:2.5 },         // нос
+  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5 },         // кончик носа
+  { x0:-6, x1:-4, y0:8, y1:9 },                    // левый уголок рта
+  { x0:-4, x1: 4, y0:9, y1:10 },                   // рот
+  { x0: 4, x1: 6, y0:8, y1:9 },                    // правый уголок рта
+];
+const RX = 8.5, RY = 9.5, YC = 5;
+const clamp = v => Math.max(-0.999, Math.min(0.999, v));
+// Проекция границы на "голову-сферу" с поворотом yaw (влево-вправо) и pitch (вверх-вниз)
+const PX = (e, k, yaw)   => Math.round(RX * Math.sin(Math.asin(clamp(e / RX)) + yaw) + k * Math.sin(yaw));
+const PY = (e, k, pitch) => Math.round(RY * Math.sin(Math.asin(clamp((e - YC) / RY)) + pitch) + YC + k * Math.sin(pitch));
+
+// Движение "размышления": голова плавно смотрит в разные точки и замирает
+let yaw = 0, pitch = 0, ty = 0, tp = 0, hold = 60, blink = 0, nextBlink = 150, t = 0;
+function pickTarget(){
+  const poses = [[0,0],[0,0],[-0.3,-0.12],[0.3,-0.14],[-0.25,0.12],[0.22,0.15],[0,-0.2],[0.32,0],[-0.32,0.03]];
+  const p = poses[Math.floor(Math.random() * poses.length)];
+  ty = p[0] + (Math.random() - 0.5) * 0.06;
+  tp = p[1] + (Math.random() - 0.5) * 0.06;
+  hold = 50 + Math.random() * 110;
+}
+
+function step(){
+  t++;
+  if (hold-- <= 0) pickTarget();
+  yaw += (ty - yaw) * 0.06;
+  pitch += (tp - pitch) * 0.06;
+  if (--nextBlink <= 0){ blink = 10; nextBlink = 120 + Math.random() * 220; }
+  if (blink > 0) blink--;
+}
+
+function draw(){
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#fff';
+  for (const p of parts){
+    const k = p.depth || 0;
+    let x0 = PX(p.x0, k, yaw), x1 = Math.max(x0 + 1, PX(p.x1, k, yaw));
+    let y0 = PY(p.y0, k, pitch), y1 = Math.max(y0 + 1, PY(p.y1, k, pitch));
+    if (p.eye && blink > 0){
+      if (blink > 3 && blink < 8) continue;   // глаз закрыт
+      y0 = Math.max(y0, y1 - 1);              // полузакрыт
+    }
+    ctx.fillRect(cx + x0 * cell, cy + (y0 - YC) * cell, (x1 - x0) * cell, (y1 - y0) * cell);
+  }
+}
+
+let last = 0, acc = 0;
+function loop(ts){
+  acc += Math.min(100, ts - last); last = ts;
+  while (acc >= 1000/60){ if (!frozen) step(); acc -= 1000/60; }
+  draw();
+  requestAnimationFrame(loop);
+}
+const q = new URLSearchParams(location.search);
+let frozen = false;
+if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); }
+requestAnimationFrame(ts => { last = ts; loop(ts); });
+</script>
+</body>
+</html>
