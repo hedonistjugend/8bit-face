@@ -13,8 +13,9 @@
   .chat{position:fixed;left:0;right:0;bottom:0;padding:0 24px 28px;font-family:'Press Start 2P',monospace;-webkit-font-smoothing:none}
   .chat .line{height:4px;background:var(--fg);margin-bottom:22px}
   .chat .row{display:flex;align-items:center;gap:16px}
-  .chat input{all:unset;flex:1;font:inherit;font-size:18px;line-height:28px;color:#ddd;caret-color:var(--fg)}
+  .chat input{all:unset;flex:1;min-width:0;font:inherit;font-size:18px;line-height:28px;color:#ddd;caret-color:var(--fg)}
   .chat input::placeholder{color:var(--fg)}
+  #send{flex-shrink:0}
   .chat svg{shape-rendering:crispEdges;display:block;cursor:pointer}
 </style>
 </head>
