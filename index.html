@@ -34,6 +34,18 @@ const parts = [
   { x0:-4, x1: 4, y0:9, y1:10 },                   // рот
   { x0: 4, x1: 6, y0:8, y1:9 },                    // правый уголок рта
 ];
+// Удивлённое лицо: рот буквой "О" и глаза повыше
+const surprisedParts = [
+  { x0:-6, x1:-5, y0:-1, y1:2, eye:true },
+  { x0: 5, x1: 6, y0:-1, y1:2, eye:true },
+  { x0: 0, x1: 1, y0:0, y1:6, depth:2.5 },
+  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5 },
+  { x0:-2, x1: 2, y0:8, y1:9 },                    // верх "О"
+  { x0:-3, x1:-2, y0:9, y1:11 },                   // левый край
+  { x0: 2, x1: 3, y0:9, y1:11 },                   // правый край
+  { x0:-2, x1: 2, y0:11, y1:12 },                  // низ "О"
+];
+let surprise = 0;
 const RX = 8.5, RY = 9.5, YC = 5;
 const clamp = v => Math.max(-0.999, Math.min(0.999, v));
 // Проекция границы на "голову-сферу" с поворотом yaw (влево-вправо) и pitch (вверх-вниз)
@@ -53,16 +65,18 @@ function pickTarget(){
 function step(){
   t++;
   if (hold-- <= 0) pickTarget();
-  yaw += (ty - yaw) * 0.06;
-  pitch += (tp - pitch) * 0.06;
-  if (--nextBlink <= 0){ blink = 10; nextBlink = 120 + Math.random() * 220; }
+  const speed = surprise > 0 ? 0.18 : 0.06;
+  yaw += (ty - yaw) * speed;
+  pitch += (tp - pitch) * speed;
+  if (surprise > 0) surprise--;
+  if (surprise === 0 && --nextBlink <= 0){ blink = 10; nextBlink = 120 + Math.random() * 220; }
   if (blink > 0) blink--;
 }
 
 function draw(){
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.fillStyle = '#fff';
-  for (const p of parts){
+  for (const p of (surprise > 0 ? surprisedParts : parts)){
     const k = p.depth || 0;
     let x0 = PX(p.x0, k, yaw), x1 = Math.max(x0 + 1, PX(p.x1, k, yaw));
     let y0 = PY(p.y0, k, pitch), y1 = Math.max(y0 + 1, PY(p.y1, k, pitch));
@@ -77,13 +91,25 @@ function draw(){
 let last = 0, acc = 0;
 function loop(ts){
   acc += Math.min(100, ts - last); last = ts;
-  while (acc >= 1000/60){ if (!frozen) step(); acc -= 1000/60; }
+  while (acc >= 1000/60){ if (!frozen) step(); else if (surprise) surprise = 2; acc -= 1000/60; }
   draw();
   requestAnimationFrame(loop);
 }
+// Клик: лицо поворачивается в сторону клика и удивляется
+cv.addEventListener('pointerdown', e => {
+  const d = devicePixelRatio || 1;
+  const dx = (e.clientX * d - cx) / (cv.width / 2);
+  const dy = (e.clientY * d - cy) / (cv.height / 2);
+  const lim = v => Math.max(-1, Math.min(1, v));
+  ty = lim(dx * 1.4) * 0.38;
+  tp = lim(dy * 1.4) * 0.25;
+  surprise = 80; blink = 0;
+  hold = 140;
+});
+
 const q = new URLSearchParams(location.search);
 let frozen = false;
-if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); }
+if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); }
 requestAnimationFrame(ts => { last = ts; loop(ts); });
 </script>
 </body>
