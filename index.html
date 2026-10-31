@@ -12,6 +12,9 @@
 <body>
 <canvas id="c"></canvas>
 <script>
+const q = new URLSearchParams(location.search);
+const FG = '#' + (q.get('fg') || 'ffffff').replace(/[^0-9a-fA-F]/g, '');
+const SMALL = q.get('size') === 'small';
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 let cell, cx, cy;
@@ -40,17 +43,33 @@ const surprisedParts = [
   { x0: 5, x1: 6, y0:-1, y1:2, eye:true },
   { x0: 0, x1: 1, y0:0, y1:6, depth:2.5 },
   { x0:-2, x1: 0, y0:5, y1:6, depth:2.5 },
-  { x0:-2, x1: 2, y0:8, y1:9 },                    // верх "О"
-  { x0:-3, x1:-2, y0:9, y1:11 },                   // левый край
-  { x0: 2, x1: 3, y0:9, y1:11 },                   // правый край
-  { x0:-2, x1: 2, y0:11, y1:12 },                  // низ "О"
+  { x0:-3, x1: 3, y0:8, y1:12, ring:true },        // рот буквой "О"
+];
+// Уменьшенное лицо (~на 20%) с теми же толстыми пикселями
+const smallParts = [
+  { x0:-5, x1:-4, y0:0, y1:2, eye:true },
+  { x0: 4, x1: 5, y0:0, y1:2, eye:true },
+  { x0: 0, x1: 1, y0:0, y1:5, depth:2 },
+  { x0:-2, x1: 0, y0:4, y1:5, depth:2 },
+  { x0:-5, x1:-3, y0:7, y1:8 },
+  { x0:-3, x1: 3, y0:8, y1:9 },
+  { x0: 3, x1: 5, y0:7, y1:8 },
+];
+const smallSurprised = [
+  { x0:-5, x1:-4, y0:-1, y1:2, eye:true },
+  { x0: 4, x1: 5, y0:-1, y1:2, eye:true },
+  { x0: 0, x1: 1, y0:0, y1:5, depth:2 },
+  { x0:-2, x1: 0, y0:4, y1:5, depth:2 },
+  { x0:-3, x1: 3, y0:7, y1:11, ring:true },
 ];
 let surprise = 0;
-const RX = 8.5, RY = 9.5, YC = 5;
+const RX = SMALL ? 7 : 8.5, RY = SMALL ? 8 : 9.5, YC = SMALL ? 4.5 : 5;
 const clamp = v => Math.max(-0.999, Math.min(0.999, v));
 // Проекция границы на "голову-сферу" с поворотом yaw (влево-вправо) и pitch (вверх-вниз)
-const PX = (e, k, yaw)   => Math.round(RX * Math.sin(Math.asin(clamp(e / RX)) + yaw) + k * Math.sin(yaw));
-const PY = (e, k, pitch) => Math.round(RY * Math.sin(Math.asin(clamp((e - YC) / RY)) + pitch) + YC + k * Math.sin(pitch));
+const PXf = (e, k, yaw)   => RX * Math.sin(Math.asin(clamp(e / RX)) + yaw) + k * Math.sin(yaw);
+const PYf = (e, k, pitch) => RY * Math.sin(Math.asin(clamp((e - YC) / RY)) + pitch) + YC + k * Math.sin(pitch);
+const PX = (e, k, yaw)   => Math.round(PXf(e, k, yaw));
+const PY = (e, k, pitch) => Math.round(PYf(e, k, pitch));
 
 // Движение "размышления": голова плавно смотрит в разные точки и замирает
 let yaw = 0, pitch = 0, ty = 0, tp = 0, hold = 60, blink = 0, nextBlink = 150, t = 0;
@@ -75,11 +94,25 @@ function step(){
 
 function draw(){
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle = '#fff';
-  for (const p of (surprise > 0 ? surprisedParts : parts)){
+  ctx.fillStyle = FG;
+  for (const p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
     const k = p.depth || 0;
-    let x0 = PX(p.x0, k, yaw), x1 = Math.max(x0 + 1, PX(p.x1, k, yaw));
-    let y0 = PY(p.y0, k, pitch), y1 = Math.max(y0 + 1, PY(p.y1, k, pitch));
+    if (p.ring){ // "О": рамка толщиной в 1 пиксель
+      const L = Math.round(PXf(p.x0 + 0.5, k, yaw) - 0.5);
+      const R2 = Math.max(L + 2, Math.round(PXf(p.x1 - 0.5, k, yaw) - 0.5));
+      const T = Math.round(PYf(p.y0 + 0.5, k, pitch) - 0.5);
+      const B = Math.max(T + 2, Math.round(PYf(p.y1 - 0.5, k, pitch) - 0.5));
+      const r = (x, y, w, h) => ctx.fillRect(cx + x * cell, cy + (y - YC) * cell, w * cell, h * cell);
+      r(L + 1, T, R2 - L - 1, 1); r(L + 1, B, R2 - L - 1, 1);
+      r(L, T + 1, 1, B - T - 1); r(R2, T + 1, 1, B - T - 1);
+      continue;
+    }
+    // тонкие детали (в 1 пиксель) всегда остаются толщиной в 1 пиксель
+    let x0, x1, y0, y1;
+    if (p.x1 - p.x0 === 1){ x0 = Math.round(PXf(p.x0 + 0.5, k, yaw) - 0.5); x1 = x0 + 1; }
+    else { x0 = PX(p.x0, k, yaw); x1 = Math.max(x0 + 1, PX(p.x1, k, yaw)); }
+    if (p.y1 - p.y0 === 1){ y0 = Math.round(PYf(p.y0 + 0.5, k, pitch) - 0.5); y1 = y0 + 1; }
+    else { y0 = PY(p.y0, k, pitch); y1 = Math.max(y0 + 1, PY(p.y1, k, pitch)); }
     if (p.eye && blink > 0){
       if (blink > 3 && blink < 8) continue;   // глаз закрыт
       y0 = Math.max(y0, y1 - 1);              // полузакрыт
@@ -107,7 +140,6 @@ cv.addEventListener('pointerdown', e => {
   hold = 140;
 });
 
-const q = new URLSearchParams(location.search);
 let frozen = false;
 if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); }
 requestAnimationFrame(ts => { last = ts; loop(ts); });
