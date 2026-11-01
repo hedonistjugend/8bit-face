@@ -97,7 +97,7 @@ const parts = [
   { x0:-6, x1:-5, y0:0, y1:2, eye:true },          // левый глаз
   { x0: 5, x1: 6, y0:0, y1:2, eye:true },          // правый глаз
   { x0: 0, x1: 1, y0:0, y1:6, depth:2.5 },         // нос
-  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5 },         // кончик носа
+  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5, tip:true }, // кончик носа
   { x0:-6, x1:-4, y0:8, y1:9 },                    // левый уголок рта
   { x0:-4, x1: 4, y0:9, y1:10 },                   // рот
   { x0: 4, x1: 6, y0:8, y1:9 },                    // правый уголок рта
@@ -107,7 +107,7 @@ const surprisedParts = [
   { x0:-6, x1:-5, y0:-1, y1:2, eye:true },
   { x0: 5, x1: 6, y0:-1, y1:2, eye:true },
   { x0: 0, x1: 1, y0:0, y1:6, depth:2.5 },
-  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5 },
+  { x0:-2, x1: 0, y0:5, y1:6, depth:2.5, tip:true },
   { x0:-3, x1: 3, y0:8, y1:12, ring:true },        // рот буквой "О"
 ];
 // Уменьшенное лицо (~на 20%) с теми же толстыми пикселями
@@ -115,7 +115,7 @@ const smallParts = [
   { x0:-5, x1:-4, y0:0, y1:2, eye:true },
   { x0: 4, x1: 5, y0:0, y1:2, eye:true },
   { x0: 0, x1: 1, y0:0, y1:5, depth:2 },
-  { x0:-2, x1: 0, y0:4, y1:5, depth:2 },
+  { x0:-2, x1: 0, y0:4, y1:5, depth:2, tip:true },
   { x0:-5, x1:-3, y0:7, y1:8 },
   { x0:-3, x1: 3, y0:8, y1:9 },
   { x0: 3, x1: 5, y0:7, y1:8 },
@@ -124,7 +124,7 @@ const smallSurprised = [
   { x0:-5, x1:-4, y0:-1, y1:2, eye:true },
   { x0: 4, x1: 5, y0:-1, y1:2, eye:true },
   { x0: 0, x1: 1, y0:0, y1:5, depth:2 },
-  { x0:-2, x1: 0, y0:4, y1:5, depth:2 },
+  { x0:-2, x1: 0, y0:4, y1:5, depth:2, tip:true },
   { x0:-3, x1: 3, y0:7, y1:11, ring:true },
 ];
 let surprise = 0;
@@ -155,12 +155,17 @@ function step(){
   if (surprise > 0) surprise--;
   if (surprise === 0 && --nextBlink <= 0){ blink = 10; nextBlink = 120 + Math.random() * 220; }
   if (blink > 0) blink--;
+  updateNose();
 }
+// Кончик носа смотрит туда же, куда голова (с гистерезисом, чтобы не дрожал у центра)
+let noseDir = -1;
+function updateNose(){ if (yaw > 0.05) noseDir = 1; else if (yaw < -0.05) noseDir = -1; }
 
 function draw(){
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.fillStyle = FG;
-  for (const p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
+  for (let p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
+    if (p.tip && noseDir > 0) p = { ...p, x0: 1 - p.x1, x1: 1 - p.x0 };
     const k = p.depth || 0;
     if (p.ring){ // "О": рамка толщиной в 1 пиксель
       const L = Math.round(PXf(p.x0 + 0.5, k, yaw) - 0.5);
@@ -223,7 +228,7 @@ cv.addEventListener('pointercancel', release);
 cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse'){ following = false; hold = 100; } });
 
 let frozen = false;
-if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); }
+if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); updateNose(); }
 requestAnimationFrame(ts => { last = ts; loop(ts); });
 </script>
 </body>
