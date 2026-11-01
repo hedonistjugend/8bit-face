@@ -157,9 +157,9 @@ function step(){
   if (blink > 0) blink--;
   updateNose();
 }
-// Кончик носа смотрит туда же, куда голова (с гистерезисом, чтобы не дрожал у центра)
+// Кончик носа загибается в сторону, противоположную повороту головы (с гистерезисом, чтобы не дрожал у центра)
 let noseDir = -1;
-function updateNose(){ if (yaw > 0.05) noseDir = 1; else if (yaw < -0.05) noseDir = -1; }
+function updateNose(){ if (yaw > 0.05) noseDir = -1; else if (yaw < -0.05) noseDir = 1; }
 
 function draw(){
   ctx.clearRect(0, 0, cv.width, cv.height);
