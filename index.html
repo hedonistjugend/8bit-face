@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
+<meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
@@ -43,18 +44,39 @@ const q = new URLSearchParams(location.search);
 // Белый с прозрачностью (alpha=1 — чисто белый), лицо по умолчанию уменьшенное
 const ALPHA = q.has('alpha') ? +q.get('alpha') : 0.2;
 const SMALL = q.get('size') !== 'big';
-// Светлая тема: белый фон, лицо и интерфейс голубые (?theme=light|dark для принудительного выбора)
-const BLUE = '#4f9cff';
+// Случайная палитра Tailwind при каждой загрузке: [100, 400, 600, 950]
+// Светлая тема: фон 100, лицо 600. Тёмная: фон 950, лицо 400. ?color=green, ?theme=light|dark
+const TW = {
+  red:['#fee2e2','#f87171','#dc2626','#450a0a'], orange:['#ffedd5','#fb923c','#ea580c','#431407'],
+  amber:['#fef3c7','#fbbf24','#d97706','#451a03'], yellow:['#fef9c3','#facc15','#ca8a04','#422006'],
+  lime:['#ecfccb','#a3e635','#65a30d','#1a2e05'], green:['#dcfce7','#4ade80','#16a34a','#052e16'],
+  emerald:['#d1fae5','#34d399','#059669','#022c22'], teal:['#ccfbf1','#2dd4bf','#0d9488','#042f2e'],
+  cyan:['#cffafe','#22d3ee','#0891b2','#083344'], sky:['#e0f2fe','#38bdf8','#0284c7','#082f49'],
+  blue:['#dbeafe','#60a5fa','#2563eb','#172554'], indigo:['#e0e7ff','#818cf8','#4f46e5','#1e1b4b'],
+  violet:['#ede9fe','#a78bfa','#7c3aed','#2e1065'], purple:['#f3e8ff','#c084fc','#9333ea','#3b0764'],
+  fuchsia:['#fae8ff','#e879f9','#c026d3','#4a044e'], pink:['#fce7f3','#f472b6','#db2777','#500724'],
+  rose:['#ffe4e6','#fb7185','#e11d48','#4c0519']
+};
+const NAMES = Object.keys(TW);
+let FAMILY = q.get('color');
+if (!TW[FAMILY]) {
+  let last = null; try { last = localStorage.getItem('faceColor'); } catch(e){}
+  const pool = NAMES.filter(n => n !== last);
+  FAMILY = pool[Math.floor(Math.random() * pool.length)];
+}
+try { localStorage.setItem('faceColor', FAMILY); } catch(e){}
 const mq = matchMedia('(prefers-color-scheme: light)');
-let LIGHT = false;
+let LIGHT = false, FG = '#fff';
 function applyTheme(){
   const t = q.get('theme');
   LIGHT = t ? t === 'light' : mq.matches;
+  const [c100, c400, c600, c950] = TW[FAMILY];
+  FG = LIGHT ? c600 : c400;
   const st = document.documentElement.style;
-  st.setProperty('--bg', LIGHT ? '#fff' : '#000');
-  st.setProperty('--fg', LIGHT ? BLUE : `rgba(255,255,255,${ALPHA})`);
-  st.setProperty('--txt', LIGHT ? '#1f5fbf' : '#ddd');
-  const c = document.getElementById('c'); if (c) c.style.opacity = LIGHT ? 1 : ALPHA;
+  st.setProperty('--bg', LIGHT ? c100 : c950);
+  st.setProperty('--fg', FG);
+  st.setProperty('--txt', FG);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', LIGHT ? c100 : c950);
 }
 mq.addEventListener && mq.addEventListener('change', applyTheme);
 applyTheme();
@@ -64,7 +86,7 @@ let cell, cx, cy;
 function resize(){
   const d = devicePixelRatio || 1;
   cv.width = innerWidth * d; cv.height = innerHeight * d;
-  cv.style.opacity = LIGHT ? 1 : ALPHA; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+   cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
   cell = Math.max(4, Math.floor(Math.min(cv.width / 17, cv.height / 22)));
   cx = Math.floor(cv.width / 2); cy = Math.floor(cv.height / 2);
 }
@@ -137,7 +159,7 @@ function step(){
 
 function draw(){
   ctx.clearRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle = LIGHT ? BLUE : '#fff';
+  ctx.fillStyle = FG;
   for (const p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
     const k = p.depth || 0;
     if (p.ring){ // "О": рамка толщиной в 1 пиксель
