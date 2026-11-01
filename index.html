@@ -6,14 +6,14 @@
 <title>8-bit Face</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
 <style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
   /* Минималистичная строка ввода (только внешний вид) */
   :root{--fg:rgba(255,255,255,.2)}
   .chat{position:fixed;left:0;right:0;bottom:0;padding:0 24px 28px;font-family:'Press Start 2P',monospace;-webkit-font-smoothing:none}
   .chat .line{height:4px;background:var(--fg);margin-bottom:22px}
   .chat .row{display:flex;align-items:center;gap:16px}
-  .chat input{all:unset;flex:1;min-width:0;font:inherit;font-size:18px;line-height:28px;color:#ddd;caret-color:var(--fg)}
+  .chat input{all:unset;flex:1;min-width:0;font:inherit;font-size:18px;line-height:28px;color:var(--txt,#ddd);caret-color:var(--fg)}
   .chat input::placeholder{color:var(--fg)}
   #send{flex-shrink:0}
   .chat svg{shape-rendering:crispEdges;display:block;cursor:pointer}
@@ -43,14 +43,28 @@ const q = new URLSearchParams(location.search);
 // Белый с прозрачностью (alpha=1 — чисто белый), лицо по умолчанию уменьшенное
 const ALPHA = q.has('alpha') ? +q.get('alpha') : 0.2;
 const SMALL = q.get('size') !== 'big';
-document.documentElement.style.setProperty('--fg', `rgba(255,255,255,${ALPHA})`);
+// Светлая тема: белый фон, лицо и интерфейс голубые (?theme=light|dark для принудительного выбора)
+const BLUE = '#4f9cff';
+const mq = matchMedia('(prefers-color-scheme: light)');
+let LIGHT = false;
+function applyTheme(){
+  const t = q.get('theme');
+  LIGHT = t ? t === 'light' : mq.matches;
+  const st = document.documentElement.style;
+  st.setProperty('--bg', LIGHT ? '#fff' : '#000');
+  st.setProperty('--fg', LIGHT ? BLUE : `rgba(255,255,255,${ALPHA})`);
+  st.setProperty('--txt', LIGHT ? '#1f5fbf' : '#ddd');
+  const c = document.getElementById('c'); if (c) c.style.opacity = LIGHT ? 1 : ALPHA;
+}
+mq.addEventListener && mq.addEventListener('change', applyTheme);
+applyTheme();
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 let cell, cx, cy;
 function resize(){
   const d = devicePixelRatio || 1;
   cv.width = innerWidth * d; cv.height = innerHeight * d;
-  cv.style.opacity = ALPHA; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
+  cv.style.opacity = LIGHT ? 1 : ALPHA; cv.style.width = innerWidth + 'px'; cv.style.height = innerHeight + 'px';
   cell = Math.max(4, Math.floor(Math.min(cv.width / 17, cv.height / 22)));
   cx = Math.floor(cv.width / 2); cy = Math.floor(cv.height / 2);
 }
@@ -123,7 +137,7 @@ function step(){
 
 function draw(){
   ctx.clearRect(0, 0, cv.width, cv.height);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = LIGHT ? BLUE : '#fff';
   for (const p of (SMALL ? (surprise > 0 ? smallSurprised : smallParts) : (surprise > 0 ? surprisedParts : parts))){
     const k = p.depth || 0;
     if (p.ring){ // "О": рамка толщиной в 1 пиксель
