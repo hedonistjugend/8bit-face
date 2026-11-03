@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v3 -->
+<!-- face-expr-v4 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -213,7 +213,7 @@ function step(){
   const speed = surprise > 0 || following ? 0.18 : 0.06;
   yaw += (ty - yaw) * speed;
   pitch += (tp - pitch) * speed;
-  if (surprise > 0 && --surprise === 0) go(expr, 20);
+  if (surprise > 0 && --surprise === 0) go(expr, 30);
   if (tf < tl) tf++;
   if (surprise === 0 && --nextBlink <= 0){ blink = 10; nextBlink = 120 + Math.random() * 220; }
   if (blink > 0) blink--;
@@ -224,54 +224,76 @@ function step(){
 let noseDir = -1;
 function updateNose(){ if (yaw > 0.05) noseDir = -1; else if (yaw < -0.05) noseDir = 1; }
 
-// ---- Плавная 8-битная смена выражений ----
-// Глаз схлопывается в линию (как при моргании), линия перетекает в ширину нового глаза и раскрывается в новую форму.
-// Рот делает то же самое с небольшой задержкой. Всё в целых клетках, без размытия.
+// ---- Плавная смена выражений: «перетекание клеток» ----
+// Каждая деталь (левый глаз, правый глаз, рот) раскладывается на клетки 1x1. Клетки старой и новой формы
+// сопоставляются по ближайшему расстоянию; лишние клетки отпочковываются от ближайшей или сливаются в неё.
+// Каждая клетка плывёт по сглаженной траектории с небольшой задержкой (волна слева направо).
+// Клетки остаются цельными квадратами; ?snap=1 — двигать их только по целым клеткам.
 const NEUTRAL = () => partsState(SMALL ? smallParts : parts, true);
 const SURPRISED = () => partsState(SMALL ? smallSurprised : surprisedParts, false);
 const stateOf = id => id === -1 ? NEUTRAL() : id === -2 ? SURPRISED() : EXPR[id];
-let curId = expr, from = stateOf(expr), to = from, tf = 1, tl = 1;
-function go(id, len = 26){
+const SNAP = q.get('snap') === '1';
+const EASE = q.get('ease') || 'back';
+const STAG = 10;                                    // разброс старта клеток, кадров
+const easeIO = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeBack = t => { const c1 = 1.2, c2 = c1 * 1.525;   // лёгкий «пружинный» перелёт
+  return t < 0.5 ? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
+                 : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2; };
+const ease = EASE === 'cubic' ? easeIO : easeBack;
+const partsOf = st => [st.eyes[0], st.eyes[1], st.mouth];
+let curId = expr, from = stateOf(expr), to = from, tf = 1, tl = 1, tracks = null;
+const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+function matchPart(A, B, extraDelay){
+  const pairs = [];
+  A.forEach((a, i) => B.forEach((b, j) => pairs.push([d2(a, b), i, j])));
+  pairs.sort((u, v) => u[0] - v[0] || u[1] - v[1] || u[2] - v[2]);
+  const ua = new Set(), ub = new Set(), tr = [];
+  for (const [, i, j] of pairs) if (!ua.has(i) && !ub.has(j)){ ua.add(i); ub.add(j); tr.push([A[i], B[j]]); }
+  const near = (c, L) => L.reduce((m, o) => d2(c, o) < d2(c, m) ? o : m, L[0]);
+  B.forEach((b, j) => { if (!ub.has(j)) tr.push([near(b, A), b]); });   // новая клетка отпочковывается
+  A.forEach((a, i) => { if (!ua.has(i)) tr.push([a, near(a, B)]); });   // лишняя клетка сливается
+  return tr.map(([a, b]) => ({ a, b, d: extraDelay + STAG * Math.min(1, Math.max(0, (b[0] + 8) / 16)) }));
+}
+function trackPos(t, f){
+  const span = tl - STAG - 4;
+  const u = ease(Math.max(0, Math.min(1, (f - t.d) / span)));
+  let x = t.a[0] + (t.b[0] - t.a[0]) * u, y = t.a[1] + (t.b[1] - t.a[1]) * u;
+  if (SNAP){ x = Math.round(x); y = Math.round(y); }
+  return [x, y];
+}
+// Текущие клетки каждой детали (в том числе посреди перехода)
+function currentParts(){
+  if (!tracks || tf >= tl) return partsOf(to).map(cs => cs.map(c => [...c]));
+  return tracks.map(tr => tr.map(t => trackPos(t, tf)));
+}
+function startMorph(A, B, len){
+  tracks = A.map((cs, i) => matchPart(cs, B[i], i === 2 ? 4 : 0));   // рот чуть позже глаз
+  tf = 0; tl = len;
+}
+function go(id, len = 36){
   if (id === curId) return;
-  from = tf < tl / 2 ? from : to;      // если смена началась посреди другой — стартуем с ближайшей формы
-  to = stateOf(id); curId = id; tf = 0; tl = len;
+  const A = currentParts();
+  from = to; to = stateOf(id); curId = id;
+  startMorph(A, partsOf(to), len);
 }
 const bbox = cs => { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const [x, y] of cs){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
   return { x0, x1, y0, y1, ax: (x0 + x1 + 1) / 2, ay: (y0 + y1 + 1) / 2, cy: Math.round((y0 + y1) / 2) }; };
-// Сжатие по вертикали к строке ry (o = 1 — как есть, 0 — линия), без потерь пикселей
+// Сжатие по вертикали к строке ry (o = 1 — как есть, 0 — линия), без потерь пикселей (для моргания)
 function squash(cs, o, ry){
   const m = new Map();
   for (const [x, y] of cs){ const ny = ry + Math.round((y - ry) * o); m.set(x + ',' + ny, [x, ny]); }
   return [...m.values()];
-}
-const key = cs => cs.map(c => c.join(',')).sort().join(';');
-// Кадр перехода глифа A -> B на шаге f из L. Возвращает клетки и точку привязки для проекции
-function morph(A, B, f, L){
-  const a = bbox(A), b = bbox(B);
-  if (f >= L || key(A) === key(B)) return { cs: B, ax: b.ax, ay: b.ay };
-  if (f <= 0) return { cs: A, ax: a.ax, ay: a.ay };
-  const p = f / L, n1 = 0.4, n2 = 0.6;
-  const ax = a.ax + (b.ax - a.ax) * p, ay = a.ay + (b.ay - a.ay) * p;
-  let cs;
-  if (p < n1) cs = squash(A, 1 - p / n1, a.cy);
-  else if (p < n2){
-    const u = (p - n1) / (n2 - n1);
-    const x0 = Math.round(a.x0 + (b.x0 - a.x0) * u), x1 = Math.round(a.x1 + (b.x1 - a.x1) * u);
-    const y = Math.round(a.cy + (b.cy - a.cy) * u);
-    cs = []; for (let x = x0; x <= x1; x++) cs.push([x, y]);
-  } else cs = squash(B, (p - n2) / (1 - n2), b.cy);
-  return { cs, ax, ay };
 }
 // Глиф рисуется жёстко: проецируется только точка привязки, форма не разваливается
 function drawGlyph(g, k){
   const { cs } = g; if (!cs.length) return null;
   const bb = bbox(cs);
   const HW = Math.floor(cv.width / 2 / cell);   // не выходим за край экрана
-  const dx = Math.max(-HW - bb.x0, Math.min(HW - 1 - bb.x1, Math.round(PXf(g.ax, k, yaw) - g.ax)));
+  const dx = Math.max(Math.ceil(-HW - bb.x0), Math.min(Math.floor(HW - 1 - bb.x1), Math.round(PXf(g.ax, k, yaw) - g.ax)));
   const dy = Math.round(PYf(g.ay, k, pitch) - g.ay);
-  for (const [x, y] of cs) ctx.fillRect(cx + (x + dx) * cell, cy + (y + dy - YC) * cell, cell, cell);
-  return [bb.x0 + dx, bb.x1 + dx];
+  for (const [x, y] of cs) ctx.fillRect(Math.round(cx + (x + dx) * cell), Math.round(cy + (y + dy - YC) * cell), cell, cell);
+  return [Math.round(bb.x0 + dx), Math.round(bb.x1 + dx)];
 }
 function drawPart(p, ndx = 0){
   if (p.tip && noseDir > 0) p = { ...p, x0: 1 - p.x1, x1: 1 - p.x0 };
@@ -289,18 +311,24 @@ function draw(){
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.fillStyle = FG;
   const base = SMALL ? smallParts : parts;
-  const p = Math.min(1, tf / tl);
-  const Y = yaw; yaw *= from.s + (to.s - from.s) * p;
+  const morphing = tracks && tf < tl;
+  const P = currentParts();
   const sides = [];
-  for (let i = 0; i < 2; i++){
-    let g = morph(from.eyes[i], to.eyes[i], tf, tl);
-    if (tf >= tl && to.b && blink > 0){           // моргание: глаз сжимается к нижней строке
-      const bb = bbox(g.cs), closed = blink > 3 && blink < 8;
-      g = { ...g, cs: closed && bb.x1 - bb.x0 < 2 ? [] : squash(g.cs, closed ? 0 : 0.5, bb.y1) };
+  for (let i = 0; i < 3; i++){
+    let cs = P[i];
+    // точка привязки для проекции плавно переходит от старой формы к новой
+    let an = bbox(partsOf(to)[i]);
+    if (morphing){
+      const A = bbox(tracks[i].map(t => t.a)), u = ease(Math.min(1, tf / tl));
+      an = { ax: A.ax + (an.ax - A.ax) * u, ay: A.ay + (an.ay - A.ay) * u };
     }
-    sides.push(drawGlyph(g, 0));
+    if (i < 2 && !morphing && to.b && blink > 0){    // моргание: глаз сжимается к нижней строке
+      const bb = bbox(cs), closed = blink > 3 && blink < 8;
+      cs = closed && bb.x1 - bb.x0 < 2 ? [] : squash(cs, closed ? 0 : 0.5, bb.y1);
+    }
+    const r = drawGlyph({ cs, ax: an.ax, ay: an.ay }, 0);
+    if (i < 2) sides.push(r);
   }
-  drawGlyph(morph(from.mouth, to.mouth, Math.max(0, tf - 3), tl - 3), 0);   // рот чуть запаздывает
   // нос не заезжает на глаза: между ним и глазами всегда остаётся клетка
   const st = base.find(q => q.depth && !q.tip);
   const nx = Math.round(PXf(st.x0 + 0.5, st.depth, yaw) - 0.5);
@@ -308,7 +336,6 @@ function draw(){
   if (sides[1]) n2 = Math.min(sides[1][0] - 2, n2);
   if (sides[0]) n2 = Math.max(sides[0][1] + 2, n2);
   base.filter(q => q.depth).forEach(q => drawPart(q, n2 - nx));
-  yaw = Y;
 }
 
 let last = 0, acc = 0;
@@ -338,7 +365,7 @@ cv.addEventListener('pointermove', e => {
 });
 function release(e){
   if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 350){
-    surprise = 80; blink = 0; go(-2, 10);
+    surprise = 80; blink = 0; go(-2, 18);
   }
   down = null;
   if (e.pointerType !== 'mouse'){ following = false; hold = 100; }
@@ -351,7 +378,7 @@ let frozen = false;
 if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); updateNose();
   if (surprise){ curId = -2; from = to = SURPRISED(); }
   // ?mfrom=1&mto=6&mf=8 — застывший кадр перехода (0 — обычное лицо)
-  if (q.has('mto')){ const id = v => +v ? findExpr(v) : -1; from = stateOf(id(q.get('mfrom') || '0')); to = stateOf(id(q.get('mto'))); tl = 26; tf = +(q.get('mf') || 0); }
+  if (q.has('mto')){ const id = v => +v ? findExpr(v) : -1; from = stateOf(id(q.get('mfrom') || '0')); to = stateOf(id(q.get('mto'))); startMorph(partsOf(from), partsOf(to), 36); tf = +(q.get('mf') || 0); }
 }
 requestAnimationFrame(ts => { last = ts; loop(ts); });
 </script>
