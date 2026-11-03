@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v5 -->
+<!-- face-expr-v6 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -110,7 +110,7 @@ const EXPR = [
   {n:'uh oh',        l:['#'], m:'smallFrown', b:1},
   {n:'sleepy tired', l:['###'], m:'flat'},
   {n:'tears',        l:['#','#','.','#'], y0:0, m:'frown'},
-  {n:'dizzy',        l:['###','..#','#.#'], r:['###','#..','#.#'], m:'wavy'},
+  {n:'dizzy',        l:['.###','#..#','#.##'], m:'wavyDizzy'},
   {n:'amazed',       l:RING, m:'O', b:1},
   {n:'astonished',   l:STAR, m:'tiny'},
   {n:'ouch',         l:['#.','.#','#.'], r:['.#','#.','.#'], m:'wavy'},
@@ -151,6 +151,7 @@ const MOUTH = {
   crooked:   [['..##','##..'], -2, 7],
   crookedL:  [['##..','..##'], -2, 7],
   wavy:      [['#.#.#','.#.#.'], -2, 7],
+  wavyDizzy: [['.#..#.','#.##.#'], -3, 7],
   grin:      [['####','.##.'], -2, 7],
   smirk:     [['...#','###.'], -2, 7],
 };
