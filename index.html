@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v11 -->
+<!-- face-expr-v12 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -273,8 +273,8 @@ function lineCells(vals, x0, n, yTop, h){
 const GLYPH = {
   eth: ['.#.','#.#','###','#.#','.#.']
 };
-// 13×5, чаши с отверстиями и скруглёнными углами; дужки — по 2 клетки с каждого края
-const BTC_GLASSES = ['#############', '###...#...###', '..#...#...#..', '..#...#...#..', '...###.###...'];
+// 13×5, чаши с отверстиями и скруглёнными углами; дужки — две тонкие полоски с зазором
+const BTC_GLASSES = ['#############', '..#...#...#..', '###...#...###', '..#...#...#..', '...###.###...'];
 function placeGlyph(art, eyeX){
   const gw = Math.max(...art.map(r => r.length)), gh = art.length;
   const ox = eyeX - Math.floor((gw - 1) / 2);
