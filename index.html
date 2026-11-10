@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v9 -->
+<!-- face-expr-v10 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -269,11 +269,12 @@ function lineCells(vals, x0, n, yTop, h){
   }
   return { cs, up: ys[ys.length - 1] >= ys[0], change: (ys[ys.length - 1] - ys[0]) / (Math.abs(ys[0]) || 1) };
 }
-// Компактные «глаза»: B 3×5 и простой ромб ETH 3×5, без торчащих боковых точек
+// ETH — пара ромбов-глаз. BTC — одна B, повёрнутая на 90°: перекладина сверху, чаши как стёкла очков
 const GLYPH = {
-  btc: ['##.','#.#','##.','#.#','##.'],
   eth: ['.#.','#.#','###','#.#','.#.']
 };
+// 90° CW от обычной B, растянута на ширину глаз; по краям перекладины — короткие «дужки»
+const BTC_GLASSES = ['#############', '.#.##...##.#.', '.#.##...##.#.', '..##.....##..'];
 function placeGlyph(art, eyeX){
   const gw = Math.max(...art.map(r => r.length)), gh = art.length;
   const ox = eyeX - Math.floor((gw - 1) / 2);
@@ -289,7 +290,14 @@ function buildChart(kind, vals){
   else if (TREND === 'down') up = false;
   if (up !== dataUp) series = series.map(v => -v);
   const { cs, change } = lineCells(series, -6 - bx, 13 + 2 * bx, 6, 4 + by);
-  const art = GLYPH[kind];
+  if (kind === 'btc'){
+    const art = BTC_GLASSES.map(r => bx ? r[0] + r + r[r.length - 1] : r); // чуть шире на большом лице
+    const gw = art[0].length;
+    const ox = -Math.floor(gw / 2), oy = -1;
+    const cells = artCells([art, ox, oy]);
+    return { eyes: [cells.filter(([x]) => x < 0), cells.filter(([x]) => x >= 0)], mouth: cs, b: false, s: 1, chart: true, up, change, kind };
+  }
+  const art = GLYPH.eth;
   const left = placeGlyph(art, -5 - bx), right = placeGlyph(art, 4 + bx);
   return { eyes: [left, right], mouth: cs, b: false, s: 1, chart: true, up, change, kind };
 }
