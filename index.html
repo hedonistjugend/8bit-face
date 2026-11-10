@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v8 -->
+<!-- face-expr-v9 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -234,8 +234,8 @@ if (q.has('expr')){
 const nextExprDelay = () => FAST ? 60 + Math.random() * 90 : 180 + Math.random() * 420; // 3–10 c при 60 кадрах/с
 exprTimer = nextExprDelay();
 
-// ---- Крипто-графики: значок как глаз, линия как рот, клетки перетекают из лица ----
-// Ручная форма на случай, если CoinGecko не ответит. ?trend=up|down — сторона значка (и наклон линии)
+// ---- Крипто-графики: логотип как оба глаза, линия как рот, клетки перетекают из лица ----
+// Ручная форма на случай, если CoinGecko не ответит. ?trend=up|down — только направление линии
 const FB = {
   btc: [40, 50, 45, 70, 85, 100, 80, 55, 50, 60, 45, 35, 20],
   eth: [80, 90, 100, 85, 70, 75, 60, 55, 40, 50, 35, 30, 15]
@@ -269,11 +269,17 @@ function lineCells(vals, x0, n, yTop, h){
   }
   return { cs, up: ys[ys.length - 1] >= ys[0], change: (ys[ys.length - 1] - ys[0]) / (Math.abs(ys[0]) || 1) };
 }
-// B как раньше; ETH — ромб 5×8, верхняя и нижняя пирамиды с щелью посередине
+// Компактные «глаза»: B 3×5 и простой ромб ETH 3×5, без торчащих боковых точек
 const GLYPH = {
   btc: ['##.','#.#','##.','#.#','##.'],
-  eth: ['..#..', '.#.#.', '#.#.#', '.#.#.', '.....', '#.#.#', '.#.#.', '..#..']
+  eth: ['.#.','#.#','###','#.#','.#.']
 };
+function placeGlyph(art, eyeX){
+  const gw = Math.max(...art.map(r => r.length)), gh = art.length;
+  const ox = eyeX - Math.floor((gw - 1) / 2);
+  const oy = -Math.floor((gh - 1) / 2);
+  return artCells([art, ox, oy]);
+}
 function buildChart(kind, vals){
   const bx = SMALL ? 0 : 1, by = SMALL ? 0 : 1;
   let series = vals.slice();
@@ -284,14 +290,8 @@ function buildChart(kind, vals){
   if (up !== dataUp) series = series.map(v => -v);
   const { cs, change } = lineCells(series, -6 - bx, 13 + 2 * bx, 6, 4 + by);
   const art = GLYPH[kind];
-  const gw = Math.max(...art.map(r => r.length)), gh = art.length;
-  const eyeX = up ? -5 - bx : 4 + bx;
-  const ox = eyeX - Math.floor((gw - 1) / 2);
-  const oy = -Math.floor((gh - 1) / 2);
-  const glyph = artCells([art, ox, oy]);
-  const otherX = up ? 4 + bx : -5 - bx;
-  const other = [[otherX, 0], [otherX, 1]];
-  return { eyes: up ? [glyph, other] : [other, glyph], mouth: cs, b: false, s: 1, chart: true, up, change, kind };
+  const left = placeGlyph(art, -5 - bx), right = placeGlyph(art, 4 + bx);
+  return { eyes: [left, right], mouth: cs, b: false, s: 1, chart: true, up, change, kind };
 }
 const CHARTS = { btc: buildChart('btc', FB.btc), eth: buildChart('eth', FB.eth) };
 function setChart(kind, vals){
