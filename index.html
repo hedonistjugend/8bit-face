@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v7 -->
+<!-- face-expr-v8 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -234,12 +234,13 @@ if (q.has('expr')){
 const nextExprDelay = () => FAST ? 60 + Math.random() * 90 : 180 + Math.random() * 420; // 3–10 c при 60 кадрах/с
 exprTimer = nextExprDelay();
 
-// ---- Крипто-графики: клетки перетекают из лица в линию цены и обратно ----
-// Ручная форма на случай, если CoinGecko не ответит
+// ---- Крипто-графики: значок как глаз, линия как рот, клетки перетекают из лица ----
+// Ручная форма на случай, если CoinGecko не ответит. ?trend=up|down — сторона значка (и наклон линии)
 const FB = {
   btc: [40, 50, 45, 70, 85, 100, 80, 55, 50, 60, 45, 35, 20],
   eth: [80, 90, 100, 85, 70, 75, 60, 55, 40, 50, 35, 30, 15]
 };
+const TREND = (q.get('trend') || '').toLowerCase();
 function resample(vals, n){
   const out = [];
   for (let i = 0; i < n; i++){
@@ -249,7 +250,7 @@ function resample(vals, n){
   return out;
 }
 function lineCells(vals, x0, n, yTop, h){
-  const ys = resample(vals, n);
+  const ys = resample(vals.map(Number).filter(Number.isFinite), n);
   const mn = Math.min(...ys), mx = Math.max(...ys), r = mx - mn || 1;
   const pts = ys.map((v, i) => [x0 + i, yTop + h - Math.round((v - mn) / r * h)]);
   const seen = new Set(), cs = [];
@@ -268,17 +269,29 @@ function lineCells(vals, x0, n, yTop, h){
   }
   return { cs, up: ys[ys.length - 1] >= ys[0], change: (ys[ys.length - 1] - ys[0]) / (Math.abs(ys[0]) || 1) };
 }
-// Значок над графиком: грубый ₿ (две перекладины) и ромб Ξ. График начинается ниже, чтобы не пересекаться.
+// B как раньше; ETH — ромб 5×8, верхняя и нижняя пирамиды с щелью посередине
 const GLYPH = {
-  btc: [['##.','#.#','##.','#.#','##.'], -1, -3],
-  eth: [['.#.','#.#','.#.'], -1, -1]
+  btc: ['##.','#.#','##.','#.#','##.'],
+  eth: ['..#..', '.#.#.', '#.#.#', '.#.#.', '.....', '#.#.#', '.#.#.', '..#..']
 };
 function buildChart(kind, vals){
   const bx = SMALL ? 0 : 1, by = SMALL ? 0 : 1;
-  const { cs, up, change } = lineCells(vals, -7 - bx, 13 + 2 * bx, 2, 7 + by);
-  const glyph = artCells(GLYPH[kind]).map(([x, y]) => [x, y]);
-  const mid = Math.max(1, Math.min(cs.length - 1, Math.ceil(cs.length / 2)));
-  return { eyes: [glyph, cs.slice(0, mid)], mouth: cs.slice(mid), b: false, s: 1, chart: true, up, change, kind };
+  let series = vals.slice();
+  const dataUp = series[series.length - 1] >= series[0];
+  let up = dataUp;
+  if (TREND === 'up') up = true;
+  else if (TREND === 'down') up = false;
+  if (up !== dataUp) series = series.map(v => -v);
+  const { cs, change } = lineCells(series, -6 - bx, 13 + 2 * bx, 6, 4 + by);
+  const art = GLYPH[kind];
+  const gw = Math.max(...art.map(r => r.length)), gh = art.length;
+  const eyeX = up ? -5 - bx : 4 + bx;
+  const ox = eyeX - Math.floor((gw - 1) / 2);
+  const oy = -Math.floor((gh - 1) / 2);
+  const glyph = artCells([art, ox, oy]);
+  const otherX = up ? 4 + bx : -5 - bx;
+  const other = [[otherX, 0], [otherX, 1]];
+  return { eyes: up ? [glyph, other] : [other, glyph], mouth: cs, b: false, s: 1, chart: true, up, change, kind };
 }
 const CHARTS = { btc: buildChart('btc', FB.btc), eth: buildChart('eth', FB.eth) };
 function setChart(kind, vals){
@@ -293,10 +306,8 @@ function setChart(kind, vals){
 }
 function loadCrypto(){
   const base = 'https://api.coingecko.com/api/v3/coins';
-  Promise.all([
-    fetch(base + '/bitcoin/market_chart?vs_currency=usd&days=7').then(r => r.ok ? r.json() : Promise.reject()),
-    fetch(base + '/ethereum/market_chart?vs_currency=usd&days=7').then(r => r.ok ? r.json() : Promise.reject())
-  ]).then(([b, e]) => {
+  const get = coin => fetch(base + '/' + coin + '/market_chart?vs_currency=usd&days=7', { signal: AbortSignal.timeout(3000) }).then(r => r.ok ? r.json() : Promise.reject());
+  Promise.all([get('bitcoin'), get('ethereum')]).then(([b, e]) => {
     if (b.prices && b.prices.length > 2) setChart('btc', b.prices.map(p => p[1]));
     if (e.prices && e.prices.length > 2) setChart('eth', e.prices.map(p => p[1]));
     console.log('crypto', 'btc', (CHARTS.btc.change * 100).toFixed(1) + '%', 'eth', (CHARTS.eth.change * 100).toFixed(1) + '%');
