@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v6 -->
+<!-- face-expr-v7 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -41,16 +41,58 @@ if (!TW[FAMILY]) {
 try { localStorage.setItem('faceColor', FAMILY); } catch(e){}
 const mq = matchMedia('(prefers-color-scheme: light)');
 let LIGHT = false, FG = '#fff';
+const EQ0 = (q.get('expr') || '').toLowerCase();
+const palFamOf = id => id === -3 ? 'orange' : id === -4 ? 'indigo' : FAMILY;
+function colorsOf(fam){
+  const [c100, c400, c600, c950] = TW[fam];
+  return [LIGHT ? c100 : c950, LIGHT ? c600 : c400];
+}
+function applyColors(bg, fg){
+  FG = fg;
+  const st = document.documentElement.style;
+  st.setProperty('--bg', bg);
+  st.setProperty('--fg', fg);
+  st.setProperty('--txt', fg);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', bg);
+}
+function hexRgb(h){
+  h = (h || '#000').replace('#', '');
+  if (h.length === 3) h = [...h].map(c => c + c).join('');
+  return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) || 0);
+}
+function rgbHex(r, g, b){
+  return '#' + [r, g, b].map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+}
+function mixHex(a, b, t){
+  const A = hexRgb(a), B = hexRgb(b);
+  let r = A[0] + (B[0] - A[0]) * t, g = A[1] + (B[1] - A[1]) * t, bl = A[2] + (B[2] - A[2]) * t;
+  // в середине RGB-смесь синего и оранжевого сереет — чуть поднимаем насыщенность
+  const mid = 1 - Math.abs(2 * t - 1), avg = (r + g + bl) / 3, s = 1 + 0.9 * mid;
+  return rgbHex(avg + (r - avg) * s, avg + (g - avg) * s, avg + (bl - avg) * s);
+}
+let palT = 1, palA = null, palB = null, palTarget = FAMILY;
 function applyTheme(){
   const t = q.get('theme');
   LIGHT = t ? t === 'light' : mq.matches;
-  const [c100, c400, c600, c950] = TW[FAMILY];
-  FG = LIGHT ? c600 : c400;
-  const st = document.documentElement.style;
-  st.setProperty('--bg', LIGHT ? c100 : c950);
-  st.setProperty('--fg', FG);
-  st.setProperty('--txt', FG);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', LIGHT ? c100 : c950);
+  palTarget = (EQ0 === 'btc' || EQ0 === 'bitcoin') ? 'orange'
+            : (EQ0 === 'eth' || EQ0 === 'ethereum' || EQ0 === 'ether') ? 'indigo'
+            : palTarget || FAMILY;
+  const [bg, fg] = colorsOf(palTarget);
+  applyColors(bg, fg);
+  palA = palB = [bg, fg]; palT = 1;
+}
+function goPal(fam){
+  palTarget = fam;
+  const nowBg = document.documentElement.style.getPropertyValue('--bg') || colorsOf(FAMILY)[0];
+  palA = [nowBg, FG];
+  palB = colorsOf(fam);
+  palT = (palA[0].toLowerCase() === palB[0].toLowerCase() && palA[1].toLowerCase() === palB[1].toLowerCase()) ? 1 : 0;
+}
+function updatePal(){
+  if (palT >= 1) return;
+  palT = Math.min(1, palT + 1 / 40);
+  const u = palT < 0.5 ? 4 * palT * palT * palT : 1 - Math.pow(-2 * palT + 2, 3) / 2;
+  applyColors(mixHex(palA[0], palB[0], u), mixHex(palA[1], palB[1], u));
 }
 mq.addEventListener && mq.addEventListener('change', applyTheme);
 applyTheme();
@@ -175,19 +217,138 @@ for (const e of EXPR) e.s = 1;
 // Пока в случайной смене только первый ряд выражений (остальные доступны через ?expr=N)
 const CYCLE = [0, 1, 2, 3, 4, 5];
 // ?expr=5 или ?expr=dizzy фиксирует выражение, ?cycle=fast — быстрая смена
+// ?expr=btc|eth — застывший график; ?crypto=1 цикл крипто-сцен, ?crypto=0 выключить
 let expr = -1, exprTimer = 0, exprFixed = false;
 const FAST = q.get('cycle') === 'fast';
-const findExpr = v => { v = v.toLowerCase().replace(/[_+-]/g, ' '); return /^\d+$/.test(v) ? +v - 1 : EXPR.findIndex(e => e.n === v); };
-if (q.has('expr')){ const i = findExpr(q.get('expr')); if (EXPR[i]){ expr = i; exprFixed = true; } }
+const findExpr = v => {
+  v = (v || '').toLowerCase().replace(/[_+-]/g, ' ');
+  if (v === 'btc' || v === 'bitcoin') return -3;
+  if (v === 'eth' || v === 'ethereum' || v === 'ether') return -4;
+  if (v === 'neutral' || v === '0') return -1;
+  return /^\d+$/.test(v) ? +v - 1 : EXPR.findIndex(e => e.n === v);
+};
+if (q.has('expr')){
+  const i = findExpr(q.get('expr'));
+  if (i === -3 || i === -4 || i === -1 || EXPR[i]){ expr = i; exprFixed = true; }
+}
 const nextExprDelay = () => FAST ? 60 + Math.random() * 90 : 180 + Math.random() * 420; // 3–10 c при 60 кадрах/с
 exprTimer = nextExprDelay();
+
+// ---- Крипто-графики: клетки перетекают из лица в линию цены и обратно ----
+// Ручная форма на случай, если CoinGecko не ответит
+const FB = {
+  btc: [40, 50, 45, 70, 85, 100, 80, 55, 50, 60, 45, 35, 20],
+  eth: [80, 90, 100, 85, 70, 75, 60, 55, 40, 50, 35, 30, 15]
+};
+function resample(vals, n){
+  const out = [];
+  for (let i = 0; i < n; i++){
+    const a = i * (vals.length - 1) / (n - 1), i0 = Math.floor(a), i1 = Math.min(i0 + 1, vals.length - 1), t = a - i0;
+    out.push(vals[i0] * (1 - t) + vals[i1] * t);
+  }
+  return out;
+}
+function lineCells(vals, x0, n, yTop, h){
+  const ys = resample(vals, n);
+  const mn = Math.min(...ys), mx = Math.max(...ys), r = mx - mn || 1;
+  const pts = ys.map((v, i) => [x0 + i, yTop + h - Math.round((v - mn) / r * h)]);
+  const seen = new Set(), cs = [];
+  const add = (x, y) => { const k = x + ',' + y; if (!seen.has(k)){ seen.add(k); cs.push([x, y]); } };
+  for (let i = 1; i < pts.length; i++){
+    let [x, y] = pts[i - 1], [x1, y1] = pts[i];
+    const dx = Math.abs(x1 - x), dy = Math.abs(y1 - y), sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1;
+    let err = dx - dy;
+    for (;;){
+      add(x, y);
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy){ err -= dy; x += sx; }
+      if (e2 < dx){ err += dx; y += sy; }
+    }
+  }
+  return { cs, up: ys[ys.length - 1] >= ys[0], change: (ys[ys.length - 1] - ys[0]) / (Math.abs(ys[0]) || 1) };
+}
+// Значок над графиком: грубый ₿ (две перекладины) и ромб Ξ. График начинается ниже, чтобы не пересекаться.
+const GLYPH = {
+  btc: [['##.','#.#','##.','#.#','##.'], -1, -3],
+  eth: [['.#.','#.#','.#.'], -1, -1]
+};
+function buildChart(kind, vals){
+  const bx = SMALL ? 0 : 1, by = SMALL ? 0 : 1;
+  const { cs, up, change } = lineCells(vals, -7 - bx, 13 + 2 * bx, 2, 7 + by);
+  const glyph = artCells(GLYPH[kind]).map(([x, y]) => [x, y]);
+  const mid = Math.max(1, Math.min(cs.length - 1, Math.ceil(cs.length / 2)));
+  return { eyes: [glyph, cs.slice(0, mid)], mouth: cs.slice(mid), b: false, s: 1, chart: true, up, change, kind };
+}
+const CHARTS = { btc: buildChart('btc', FB.btc), eth: buildChart('eth', FB.eth) };
+function setChart(kind, vals){
+  CHARTS[kind] = buildChart(kind, vals);
+  const id = kind === 'btc' ? -3 : -4;
+  if (curId === id || (to && to.kind === kind)){
+    const f = tf, len = tl;
+    to = CHARTS[kind];
+    if (curId === id && f >= len) from = to;
+    else if (tracks){ startMorph(partsOf(from), partsOf(to), len); tf = f; }
+  }
+}
+function loadCrypto(){
+  const base = 'https://api.coingecko.com/api/v3/coins';
+  Promise.all([
+    fetch(base + '/bitcoin/market_chart?vs_currency=usd&days=7').then(r => r.ok ? r.json() : Promise.reject()),
+    fetch(base + '/ethereum/market_chart?vs_currency=usd&days=7').then(r => r.ok ? r.json() : Promise.reject())
+  ]).then(([b, e]) => {
+    if (b.prices && b.prices.length > 2) setChart('btc', b.prices.map(p => p[1]));
+    if (e.prices && e.prices.length > 2) setChart('eth', e.prices.map(p => p[1]));
+    console.log('crypto', 'btc', (CHARTS.btc.change * 100).toFixed(1) + '%', 'eth', (CHARTS.eth.change * 100).toFixed(1) + '%');
+  }).catch(() => console.log('crypto fallback shapes'));
+}
+loadCrypto();
+function nameOf(id){ return id === -1 ? 'neutral' : id === -2 ? 'surprise' : id === -3 ? 'btc' : id === -4 ? 'eth' : (id + 1) + ' ' + EXPR[id].n; }
+function reactionOf(ch){
+  const v = ch.change;
+  return v >= 0.08 ? 5 : v >= 0 ? 0 : v <= -0.08 ? 3 : 1; // amazed / smile / tears / uh oh
+}
+const CRYPTO = q.get('crypto');
+const cryptoOn = CRYPTO !== '0' && !exprFixed;
+const cryptoLoop = CRYPTO === '1';
+let seq = -1, seqWait = cryptoOn ? 120 : 1e9; // после ~2 с нейтрального лица — первая сцена
+function runSeq(){
+  if (!cryptoOn) return false;
+  if (surprise > 0) return seq >= 0;
+  if (seq < 0){
+    if (--seqWait > 0) return false;
+    seq = (curId === -1 && tf >= tl) ? 1 : 0;
+    seqWait = 0;
+  }
+  if (--seqWait > 0) return true;
+  const steps = [
+    () => { expr = -1; goPal(FAMILY); go(-1); seqWait = 120; },
+    () => { expr = -3; goPal('orange'); go(-3); seqWait = 180; },
+    () => { expr = reactionOf(CHARTS.btc); go(expr); seqWait = 150; },
+    () => { expr = -4; goPal('indigo'); go(-4); seqWait = 180; },
+    () => { expr = reactionOf(CHARTS.eth); go(expr); seqWait = 150; },
+    () => { expr = -1; goPal(FAMILY); go(-1); seqWait = 90; }
+  ];
+  if (seq >= steps.length){
+    seq = -1;
+    seqWait = cryptoLoop ? 60 : 2700 + Math.random() * 2700; // 45–90 с
+    expr = -1;
+    exprTimer = nextExprDelay();
+    return false;
+  }
+  steps[seq]();
+  console.log('crypto step', nameOf(expr));
+  seq++;
+  return true;
+}
 function updateExpr(){
+  if (runSeq()) return;
   if (exprFixed || surprise > 0 || --exprTimer > 0) return;
   if (expr >= 0 && Math.random() < 0.4) expr = -1;               // иногда возвращаемся к обычному лицу
   else { let n; do n = CYCLE[Math.floor(Math.random() * CYCLE.length)]; while (n === expr); expr = n; }
   exprTimer = nextExprDelay();
   go(expr);
-  console.log('expr', expr < 0 ? 'neutral' : (expr + 1) + ' ' + EXPR[expr].n);
+  console.log('expr', nameOf(expr));
 }
 let surprise = 0;
 const RX = SMALL ? 7 : 8.5, RY = SMALL ? 8 : 9.5, YC = SMALL ? 4.5 : 5;
@@ -210,7 +371,12 @@ function pickTarget(){
 
 function step(){
   t++;
-  if (!following && hold-- <= 0) pickTarget();
+  updatePal();
+  const onChart = (to && to.chart) || (from && from.chart && tf < tl);
+  if (!following){
+    if (onChart){ ty += (0 - ty) * 0.1; tp += (0 - tp) * 0.1; }
+    else if (hold-- <= 0) pickTarget();
+  }
   const speed = surprise > 0 || following ? 0.18 : 0.06;
   yaw += (ty - yaw) * speed;
   pitch += (tp - pitch) * speed;
@@ -232,7 +398,7 @@ function updateNose(){ if (yaw > 0.05) noseDir = -1; else if (yaw < -0.05) noseD
 // Клетки остаются цельными квадратами; ?snap=1 — двигать их только по целым клеткам.
 const NEUTRAL = () => partsState(SMALL ? smallParts : parts, true);
 const SURPRISED = () => partsState(SMALL ? smallSurprised : surprisedParts, false);
-const stateOf = id => id === -1 ? NEUTRAL() : id === -2 ? SURPRISED() : EXPR[id];
+const stateOf = id => id === -1 ? NEUTRAL() : id === -2 ? SURPRISED() : id === -3 ? CHARTS.btc : id === -4 ? CHARTS.eth : EXPR[id];
 const SNAP = q.get('snap') === '1';
 const EASE = q.get('ease') || 'back';
 const STAG = 10;                                    // разброс старта клеток, кадров
@@ -331,12 +497,19 @@ function draw(){
     if (i < 2) sides.push(r);
   }
   // нос не заезжает на глаза: между ним и глазами всегда остаётся клетка
-  const st = base.find(q => q.depth && !q.tip);
-  const nx = Math.round(PXf(st.x0 + 0.5, st.depth, yaw) - 0.5);
-  let n2 = nx;
-  if (sides[1]) n2 = Math.min(sides[1][0] - 2, n2);
-  if (sides[0]) n2 = Math.max(sides[0][1] + 2, n2);
-  base.filter(q => q.depth).forEach(q => drawPart(q, n2 - nx));
+  // во время графика нос плавно гаснет — иначе он торчит посреди линии
+  const morphU = morphing ? ease(Math.min(1, tf / tl)) : 1;
+  const noseA = (to.chart && from.chart) ? 0 : to.chart ? 1 - morphU : from.chart ? morphU : 1;
+  if (noseA > 0.02){
+    ctx.globalAlpha = noseA;
+    const st = base.find(q => q.depth && !q.tip);
+    const nx = Math.round(PXf(st.x0 + 0.5, st.depth, yaw) - 0.5);
+    let n2 = nx;
+    if (sides[1]) n2 = Math.min(sides[1][0] - 2, n2);
+    if (sides[0]) n2 = Math.max(sides[0][1] + 2, n2);
+    base.filter(q => q.depth).forEach(q => drawPart(q, n2 - nx));
+    ctx.globalAlpha = 1;
+  }
 }
 
 let last = 0, acc = 0;
@@ -378,8 +551,17 @@ cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse'){ follo
 let frozen = false;
 if (q.has('yaw')){ frozen = true; yaw = +q.get('yaw'); pitch = +(q.get('pitch')||0); blink = +(q.get('blink')||0); surprise = +(q.get('surprise')||0); updateNose();
   if (surprise){ curId = -2; from = to = SURPRISED(); }
-  // ?mfrom=1&mto=6&mf=8 — застывший кадр перехода (0 — обычное лицо)
-  if (q.has('mto')){ const id = v => +v ? findExpr(v) : -1; from = stateOf(id(q.get('mfrom') || '0')); to = stateOf(id(q.get('mto'))); startMorph(partsOf(from), partsOf(to), 36); tf = +(q.get('mf') || 0); }
+  // ?mfrom=1&mto=6&mf=8 — застывший кадр перехода (0 — обычное лицо, btc/eth — график)
+  if (q.has('mto')){
+    const id = v => { const i = findExpr(v || '0'); return (i === -3 || i === -4 || i === -1 || EXPR[i]) ? i : -1; };
+    const a = id(q.get('mfrom') || '0'), b = id(q.get('mto'));
+    from = stateOf(a); to = stateOf(b); curId = b;
+    startMorph(partsOf(from), partsOf(to), 36); tf = +(q.get('mf') || 0);
+    palA = colorsOf(palFamOf(a)); palB = colorsOf(palFamOf(b));
+    palT = Math.max(0, Math.min(1, tf / 36));
+    const u = palT < 0.5 ? 4 * palT * palT * palT : 1 - Math.pow(-2 * palT + 2, 3) / 2;
+    applyColors(mixHex(palA[0], palB[0], u), mixHex(palA[1], palB[1], u));
+  }
 }
 requestAnimationFrame(ts => { last = ts; loop(ts); });
 </script>
