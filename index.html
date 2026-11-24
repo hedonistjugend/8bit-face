@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v13 -->
+<!-- face-expr-v14 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -369,7 +369,7 @@ function updateExpr(){
   if (expr >= 0 && Math.random() < 0.4) expr = -1;               // иногда возвращаемся к обычному лицу
   else { let n; do n = CYCLE[Math.floor(Math.random() * CYCLE.length)]; while (n === expr); expr = n; }
   exprTimer = nextExprDelay();
-  if (expr === TH){ exprTimer = Math.max(exprTimer, 260); hold = 0; }   // успеваем показать все три точки
+  if (expr === TH){ exprTimer = Math.max(exprTimer, 360); hold = 0; }   // успеваем показать все три точки
   go(expr);
   console.log('expr', nameOf(expr));
 }
@@ -416,12 +416,12 @@ function step(){
 }
 // ---- «Думает» как в Final Fantasy: многоточие появляется по точке справа сверху от глаз ----
 // ?dots=1|2|3 — застывшее число точек (для превью)
-const DOT_GAP = 28, DOT_HOLD = 70, DOT_CLEAR = 22;            // ~470 мс между точками
+const DOT_GAP = 48, DOT_HOLD = 90, DOT_CLEAR = 36, DOT_IN = 12;   // ~800 мс между точками, ~2 с все три
 const DOTS_FIX = q.has('dots') ? +q.get('dots') : null;
 let thinkT = -1, dotsFade = 0;
 function updateDots(){
-  if (curId === TH && tf >= tl){ thinkT++; dotsFade = Math.min(1, dotsFade + 0.2); }
-  else { dotsFade = Math.max(0, dotsFade - 0.15); if (dotsFade === 0) thinkT = -1; }
+  if (curId === TH && tf >= tl){ thinkT++; dotsFade = Math.min(1, dotsFade + 0.1); }
+  else { dotsFade = Math.max(0, dotsFade - 0.08); if (dotsFade === 0) thinkT = -1; }
 }
 function dotAlphas(){
   if (DOTS_FIX !== null) return [0, 1, 2].map(i => i < DOTS_FIX ? 1 : 0);
@@ -429,7 +429,7 @@ function dotAlphas(){
   const per = DOT_GAP * 3 + DOT_HOLD + DOT_CLEAR, f = Math.max(0, thinkT) % per;
   const clear = f > per - DOT_CLEAR ? 1 - (f - (per - DOT_CLEAR)) / DOT_CLEAR : 1;
   return [0, 1, 2].map(i => {
-    const a = (f - 8 - i * DOT_GAP) / 6;                     // каждая точка быстро «проявляется»
+    const a = (f - 8 - i * DOT_GAP) / DOT_IN;                     // каждая точка быстро «проявляется»
     return Math.max(0, Math.min(1, a)) * clear * dotsFade;
   });
 }
