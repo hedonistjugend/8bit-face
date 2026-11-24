@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#000">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>8-bit Face</title>
-<!-- face-expr-v12 -->
+<!-- face-expr-v13 -->
 <style>
   html,body{margin:0;height:100%;background:var(--bg,#000);overflow:hidden}
   canvas{display:block;touch-action:none}
@@ -178,7 +178,9 @@ const EXPR = [
   {n:'didnt sleep',  l:['##','##','.#'], m:'flat', b:1},
   {n:'awry',         l:['#.','.#','#.'], m:'crooked'},
   {n:'youre crazy',  l:['.#.#','#.#.'], m:'o'},
+  {n:'thinking',     l:['#','#'], y0:-1, m:'ponder', b:1},   // глаза чуть вверх, рот «хмм»; над глазами — многоточие
 ];
+const TH = EXPR.findIndex(e => e.n === 'thinking');
 // Рты: [рисунок, x, y] для маленького лица (не больше 6 клеток)
 const MOUTH = {
   smile:     [['#....#','.####.'], -3, 7],
@@ -196,6 +198,7 @@ const MOUTH = {
   wavyDizzy: [['.#..#.','#.##.#'], -3, 7],
   grin:      [['####','.##.'], -2, 7],
   smirk:     [['...#','###.'], -2, 7],
+  ponder:    [['###'], 0, 8],
 };
 const artCells = ([rows, ox, oy]) => rows.flatMap((r, j) => [...r].flatMap((ch, i) => ch === '#' ? [[ox + i, oy + j]] : []));
 const eyeCells = (art, ex, y0) => artCells([art, ex - Math.floor((art[0].length - 1) / 2), y0 ?? 2 - art.length]);
@@ -215,7 +218,7 @@ const partsState = (ps, b) => ({ eyes: ps.filter(p => p.eye).map(toCells),
   mouth: ps.filter(p => !p.eye && !p.depth).flatMap(p => p.ring ? ringCells(p) : toCells(p)), b, s: 1 });
 for (const e of EXPR) e.s = 1;
 // Пока в случайной смене только первый ряд выражений (остальные доступны через ?expr=N)
-const CYCLE = [0, 1, 2, 3, 4, 5];
+const CYCLE = [0, 1, 2, 3, 4, 5, TH];
 // ?expr=5 или ?expr=dizzy фиксирует выражение, ?cycle=fast — быстрая смена
 // ?expr=btc|eth — застывший график; ?crypto=1 цикл крипто-сцен, ?crypto=0 выключить
 let expr = -1, exprTimer = 0, exprFixed = false;
@@ -366,6 +369,7 @@ function updateExpr(){
   if (expr >= 0 && Math.random() < 0.4) expr = -1;               // иногда возвращаемся к обычному лицу
   else { let n; do n = CYCLE[Math.floor(Math.random() * CYCLE.length)]; while (n === expr); expr = n; }
   exprTimer = nextExprDelay();
+  if (expr === TH){ exprTimer = Math.max(exprTimer, 260); hold = 0; }   // успеваем показать все три точки
   go(expr);
   console.log('expr', nameOf(expr));
 }
@@ -381,6 +385,9 @@ const PY = (e, k, pitch) => Math.round(PYf(e, k, pitch));
 // Движение "размышления": голова плавно смотрит в разные точки и замирает
 let yaw = 0, pitch = 0, ty = 0, tp = 0, hold = 60, blink = 0, nextBlink = 150, t = 0;
 function pickTarget(){
+  if (curId === TH){   // задумался: взгляд вверх-вправо, лёгкое покачивание
+    ty = 0.16 + Math.random() * 0.1; tp = -0.1 - Math.random() * 0.08; hold = 60 + Math.random() * 80; return;
+  }
   const poses = [[0,0],[0,0],[-0.3,-0.12],[0.3,-0.14],[-0.25,0.12],[0.22,0.15],[0,-0.2],[0.32,0],[-0.32,0.03]];
   const p = poses[Math.floor(Math.random() * poses.length)];
   ty = p[0] + (Math.random() - 0.5) * 0.06;
@@ -405,6 +412,43 @@ function step(){
   if (blink > 0) blink--;
   updateExpr();
   updateNose();
+  updateDots();
+}
+// ---- «Думает» как в Final Fantasy: многоточие появляется по точке справа сверху от глаз ----
+// ?dots=1|2|3 — застывшее число точек (для превью)
+const DOT_GAP = 28, DOT_HOLD = 70, DOT_CLEAR = 22;            // ~470 мс между точками
+const DOTS_FIX = q.has('dots') ? +q.get('dots') : null;
+let thinkT = -1, dotsFade = 0;
+function updateDots(){
+  if (curId === TH && tf >= tl){ thinkT++; dotsFade = Math.min(1, dotsFade + 0.2); }
+  else { dotsFade = Math.max(0, dotsFade - 0.15); if (dotsFade === 0) thinkT = -1; }
+}
+function dotAlphas(){
+  if (DOTS_FIX !== null) return [0, 1, 2].map(i => i < DOTS_FIX ? 1 : 0);
+  if (thinkT < 0 && dotsFade <= 0) return [0, 0, 0];
+  const per = DOT_GAP * 3 + DOT_HOLD + DOT_CLEAR, f = Math.max(0, thinkT) % per;
+  const clear = f > per - DOT_CLEAR ? 1 - (f - (per - DOT_CLEAR)) / DOT_CLEAR : 1;
+  return [0, 1, 2].map(i => {
+    const a = (f - 8 - i * DOT_GAP) / 6;                     // каждая точка быстро «проявляется»
+    return Math.max(0, Math.min(1, a)) * clear * dotsFade;
+  });
+}
+function drawDots(){
+  const al = dotAlphas(); if (!al.some(a => a > 0.01)) return;
+  const ex = SMALL ? 4 : 5, y = -4;                          // правее правого глаза, на две строки выше него
+  // многоточие движется жёстко вместе с правым глазом (та же привязка, что у глифа глаза)
+  const ax = ex + 0.5, ay = 0;
+  const dx = Math.round(PXf(ax, 0, yaw) - ax);
+  const py = Math.max(Math.ceil(YC - cy / cell), y + Math.round(PYf(ay, 0, pitch) - ay));
+  let px = [ex + 1, ex + 3, ex + 5].map(x => x + dx);
+  const HW = Math.floor(cv.width / 2 / cell);                // не выходим за край экрана
+  const over = px[2] - (HW - 1); if (over > 0) px = px.map(v => v - over);
+  px.forEach((x, i) => {
+    if (al[i] <= 0.01) return;
+    ctx.globalAlpha = al[i];
+    ctx.fillRect(cx + x * cell, cy + (py - YC) * cell, cell, cell);
+  });
+  ctx.globalAlpha = 1;
 }
 // Кончик носа загибается в сторону, противоположную повороту головы (с гистерезисом, чтобы не дрожал у центра)
 let noseDir = -1;
@@ -529,6 +573,7 @@ function draw(){
     base.filter(q => q.depth).forEach(q => drawPart(q, n2 - nx));
     ctx.globalAlpha = 1;
   }
+  drawDots();
 }
 
 let last = 0, acc = 0;
